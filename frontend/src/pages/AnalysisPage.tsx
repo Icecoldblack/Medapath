@@ -1,9 +1,49 @@
+import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 export default function AnalysisPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const data = location.state?.analysisResult;
+  const [data, setData] = useState<any>(location.state?.analysisResult ?? null);
+  const [loading, setLoading] = useState(false);
+
+  // Persist analysis to sessionStorage when received via navigation state
+  useEffect(() => {
+    if (location.state?.analysisResult) {
+      sessionStorage.setItem('analysisResult', JSON.stringify(location.state.analysisResult));
+      setData(location.state.analysisResult);
+    }
+  }, [location.state]);
+
+  // Load from sessionStorage or fetch from backend if no state
+  useEffect(() => {
+    if (data) return;
+
+    const saved = sessionStorage.getItem('analysisResult');
+    if (saved) {
+      try { setData(JSON.parse(saved)); return; } catch { /* ignore */ }
+    }
+
+    // Last resort: fetch from backend
+    const sessionId = sessionStorage.getItem('sessionId');
+    if (sessionId) {
+      setLoading(true);
+      fetch(`/api/analysis/${sessionId}`)
+        .then(res => res.ok ? res.json() : null)
+        .then(result => { if (result) { setData(result); sessionStorage.setItem('analysisResult', JSON.stringify(result)); } })
+        .catch(() => {})
+        .finally(() => setLoading(false));
+    }
+  }, [data]);
+
+  if (loading) {
+    return (
+      <main className="max-w-5xl mx-auto px-6 pt-24 pb-24 flex flex-col items-center gap-4">
+        <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+        <p className="text-on-surface-variant">Loading analysis...</p>
+      </main>
+    );
+  }
 
   if (!data) {
     return (

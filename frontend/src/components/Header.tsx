@@ -1,4 +1,4 @@
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 
 interface NavItem {
   to: string;
@@ -16,6 +16,8 @@ const navItems: NavItem[] = [
 ];
 
 export default function Header() {
+  // useLocation forces re-render on every navigation, keeping session check current
+  useLocation();
   const hasSession = !!sessionStorage.getItem('sessionId');
 
   return (
