@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git filter-branch -f --env-filter ':*)",
+      "Bash(./mvnw compile:*)"
+    ]
+  }
+}
