@@ -53,12 +53,15 @@ public class GeminiService {
 
     public GeminiAnalysisResult analyzeSymptoms(String symptomText, String severity, String duration, String imagePath) {
         if (!isAvailable()) {
+            log.warn("Gemini not available (no API key)");
             return null;
         }
 
         try {
             String prompt = buildPrompt(symptomText, severity, duration);
             Map<String, Object> requestBody = buildRequestBody(prompt, imagePath);
+
+            log.info("Sending Gemini request — model: {}, hasImage: {}", model, imagePath != null);
 
             String responseJson = restClient.post()
                     .uri("/models/{model}:generateContent", model)
@@ -68,9 +71,12 @@ public class GeminiService {
                     .retrieve()
                     .body(String.class);
 
+            log.info("Gemini raw response (first 500 chars): {}",
+                    responseJson != null ? responseJson.substring(0, Math.min(500, responseJson.length())) : "null");
+
             return parseResponse(responseJson);
         } catch (Exception e) {
-            log.warn("Gemini API call failed, falling back to keyword triage: {}", e.getMessage());
+            log.error("Gemini API call failed, falling back to keyword triage", e);
             return null;
         }
     }
@@ -113,12 +119,20 @@ public class GeminiService {
         // Per Gemini docs: place image before text for optimal results
         if (imagePath != null) {
             try {
-                Path path = Path.of(imagePath);
+                Path path = Path.of(imagePath).toAbsolutePath();
+                log.info("Image path resolved to: {}", path);
+                log.info("Image file exists: {}", Files.exists(path));
+
                 if (Files.exists(path)) {
+                    long fileSize = Files.size(path);
+                    log.info("Image file size: {} bytes ({} MB)", fileSize, String.format("%.2f", fileSize / 1024.0 / 1024.0));
+
                     byte[] imageBytes = Files.readAllBytes(path);
                     String base64 = Base64.getEncoder().encodeToString(imageBytes);
-                    String mimeType = Files.probeContentType(path);
-                    if (mimeType == null) mimeType = "image/jpeg";
+
+                    // Detect mime type — Files.probeContentType is unreliable on Windows
+                    String mimeType = detectMimeType(path);
+                    log.info("Image mime type: {}, base64 length: {}", mimeType, base64.length());
 
                     parts.add(Map.of(
                             "inline_data", Map.of(
@@ -126,9 +140,11 @@ public class GeminiService {
                                     "data", base64
                             )
                     ));
+                } else {
+                    log.warn("Image file does not exist at: {}", path);
                 }
             } catch (Exception e) {
-                log.warn("Failed to read image for Gemini: {}", e.getMessage());
+                log.error("Failed to read image for Gemini", e);
             }
         }
 
@@ -138,16 +154,50 @@ public class GeminiService {
                 "contents", List.of(Map.of("parts", parts)),
                 "generationConfig", Map.of(
                         "temperature", 0.3,
-                        "maxOutputTokens", 1024
+                        "maxOutputTokens", 1024,
+                        "thinkingConfig", Map.of("thinkingBudget", 0)
                 )
         );
     }
 
+    private String detectMimeType(Path path) {
+        String filename = path.getFileName().toString().toLowerCase();
+        if (filename.endsWith(".png")) return "image/png";
+        if (filename.endsWith(".gif")) return "image/gif";
+        if (filename.endsWith(".webp")) return "image/webp";
+        if (filename.endsWith(".mp4")) return "video/mp4";
+        if (filename.endsWith(".mov")) return "video/quicktime";
+        if (filename.endsWith(".webm")) return "video/webm";
+        // Default for .jpg, .jpeg, or unknown
+        return "image/jpeg";
+    }
+
     private GeminiAnalysisResult parseResponse(String responseJson) throws Exception {
         JsonNode root = objectMapper.readTree(responseJson);
+
+        // Check for blocked responses (safety filters)
+        JsonNode promptFeedback = root.path("promptFeedback");
+        if (promptFeedback != null && !promptFeedback.isEmpty()) {
+            String blockReason = promptFeedback.path("blockReason").stringValue();
+            if (blockReason != null) {
+                log.warn("Gemini BLOCKED the request — reason: {}", blockReason);
+                log.warn("Full promptFeedback: {}", promptFeedback);
+                return null;
+            }
+        }
+
         JsonNode candidates = root.path("candidates");
         if (candidates.isEmpty()) {
-            log.warn("Gemini returned no candidates");
+            log.warn("Gemini returned no candidates. Full response: {}",
+                    responseJson.substring(0, Math.min(1000, responseJson.length())));
+            return null;
+        }
+
+        // Check if candidate was blocked by safety
+        JsonNode finishReason = candidates.get(0).path("finishReason");
+        if ("SAFETY".equals(finishReason.stringValue())) {
+            log.warn("Gemini candidate blocked by SAFETY filter. Ratings: {}",
+                    candidates.get(0).path("safetyRatings"));
             return null;
         }
 
@@ -159,7 +209,7 @@ public class GeminiService {
                 .stringValue();
 
         if (text == null) {
-            log.warn("Gemini response text was null");
+            log.warn("Gemini response text was null. Candidate: {}", candidates.get(0));
             return null;
         }
 

@@ -150,7 +150,7 @@ public class HospitalService {
 
             var requestBody = Map.of(
                     "contents", List.of(Map.of("parts", List.of(Map.of("text", prompt)))),
-                    "generationConfig", Map.of("temperature", 0.2, "maxOutputTokens", 512)
+                    "generationConfig", Map.of("temperature", 0.2, "maxOutputTokens", 512, "thinkingConfig", Map.of("thinkingBudget", 0))
             );
 
             String responseJson = geminiService.callGemini(requestBody);

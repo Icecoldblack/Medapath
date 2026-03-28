@@ -121,7 +121,8 @@ public class ChatService {
                     "contents", contents,
                     "generationConfig", Map.of(
                             "temperature", 0.4,
-                            "maxOutputTokens", 512
+                            "maxOutputTokens", 512,
+                            "thinkingConfig", Map.of("thinkingBudget", 0)
                     )
             );
 

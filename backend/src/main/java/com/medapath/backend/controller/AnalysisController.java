@@ -60,13 +60,13 @@ public class AnalysisController {
     }
 
     private String saveImage(MultipartFile image) throws IOException {
-        Path uploadPath = Paths.get(UPLOAD_DIR);
+        Path uploadPath = Paths.get(UPLOAD_DIR).toAbsolutePath();
         if (!Files.exists(uploadPath)) {
             Files.createDirectories(uploadPath);
         }
         String filename = UUID.randomUUID() + "_" + image.getOriginalFilename();
         Path filePath = uploadPath.resolve(filename);
         Files.copy(image.getInputStream(), filePath);
-        return filePath.toString();
+        return filePath.toAbsolutePath().toString();
     }
 }
