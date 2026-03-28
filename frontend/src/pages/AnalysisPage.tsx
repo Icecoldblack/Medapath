@@ -34,6 +34,16 @@ export default function AnalysisPage() {
     urgencyIconName = 'check_circle';
   }
 
+  const formatCareType = (type: string) => {
+    const map: Record<string, string> = {
+      primary_care: 'Primary Care',
+      urgent_care: 'Urgent Care',
+      emergency: 'Emergency Room',
+      specialty: 'Specialist',
+    };
+    return map[type] || type?.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) || 'Routine checkup';
+  };
+
   return (
     <main className="max-w-5xl mx-auto px-6 pt-12 pb-24">
       {/* ─── Progress Stepper ─── */}
@@ -128,39 +138,28 @@ export default function AnalysisPage() {
               <h3 className="font-bold text-on-tertiary-fixed-variant">Clinical Guidance</h3>
             </div>
             <p className="text-sm text-on-surface leading-relaxed font-medium">
-              We suggest: <strong>{data.careTypeSuggested || 'Routine checkup'}</strong>.
+              We suggest: <strong>{formatCareType(data.careTypeSuggested)}</strong>.
               <br/><br/>
               Seek urgent care in the next 24 hours if symptoms worsen, or if you experience difficulty breathing.
             </p>
           </div>
 
-          {/* Review Image Note */}
+          {/* Image Analysis Note */}
           {data.imageAnalyzed && (
-            <div className="bg-surface-container-lowest p-6 rounded-3xl border border-outline-variant/10 shadow-sm overflow-hidden relative group">
-              <div className="relative z-10">
-                <div className="flex items-center gap-2 mb-4">
-                  <span className="material-symbols-outlined text-primary">image</span>
-                  <h3 className="font-bold text-on-surface">Review Image</h3>
-                </div>
-                <p className="text-xs text-on-surface-variant leading-relaxed mb-4">
-                  A diagnostic image was uploaded. Our system has flagged specific regions for clinician review.
+            <div className="bg-surface-container-lowest p-6 rounded-3xl border border-outline-variant/10 shadow-sm">
+              <div className="flex items-center gap-2 mb-4">
+                <span className="material-symbols-outlined text-primary" style={{ fontVariationSettings: "'FILL' 1" }}>image</span>
+                <h3 className="font-bold text-on-surface">Image Analysis</h3>
+              </div>
+              {data.imageNote ? (
+                <p className="text-sm text-on-surface-variant leading-relaxed">
+                  {data.imageNote}
                 </p>
-                <a
-                  href="#"
-                  className="text-xs font-bold text-primary flex items-center gap-1 group-hover:underline"
-                >
-                  View annotated report
-                  <span className="material-symbols-outlined text-sm">arrow_forward</span>
-                </a>
-              </div>
-              {/* Abstract image representation */}
-              <div className="absolute -right-4 -bottom-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                <img
-                  alt="Medical scan"
-                  className="w-24 h-24 object-cover rounded-xl"
-                  src="https://lh3.googleusercontent.com/aida-public/AB6AXuDjAahhinIPTqy-BB8t14xOmVh8-kUkyz40QcWbnSbdMuMB_DSBAiJsJCGhybWASAmuE_8HP-EVraSbj9wOkkzigaj1tamjB_kWheyOYbDdm0gf81c_cbTt0ma-tp9LhRCkr1pYsodMOksQBLBCCI9WaY6JcDMcLU6hmvlVelU6Ldr6_DSZRuR9tdA28mgRh4dTo1S86orS19qemoDfrQoUyJ6hTl0gLPWU-_SA-v29Dn7b0XHyjm7UZYJhHboWCjauc6wIVN9ZEZet"
-                />
-              </div>
+              ) : (
+                <p className="text-sm text-on-surface-variant leading-relaxed">
+                  Your uploaded image has been reviewed as part of the analysis. The findings are reflected in the diagnosis above.
+                </p>
+              )}
             </div>
           )}
 

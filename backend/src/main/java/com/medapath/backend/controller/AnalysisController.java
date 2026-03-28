@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Set;
 import java.util.UUID;
 
 @RestController
@@ -23,6 +24,10 @@ public class AnalysisController {
     private final AnalysisService analysisService;
 
     private static final String UPLOAD_DIR = "uploads/";
+    private static final Set<String> ALLOWED_TYPES = Set.of(
+            "image/jpeg", "image/png", "image/gif", "image/webp",
+            "video/mp4", "video/quicktime", "video/webm"
+    );
 
     @PostMapping("/analyze")
     public ResponseEntity<AnalysisResponse> analyze(
@@ -31,6 +36,10 @@ public class AnalysisController {
 
         String imagePath = null;
         if (image != null && !image.isEmpty()) {
+            String contentType = image.getContentType();
+            if (contentType == null || !ALLOWED_TYPES.contains(contentType)) {
+                return ResponseEntity.badRequest().build();
+            }
             imagePath = saveImage(image);
         }
 

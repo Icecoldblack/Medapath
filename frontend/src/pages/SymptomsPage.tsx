@@ -1,14 +1,58 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+
+const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'video/mp4', 'video/quicktime', 'video/webm'];
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
 export default function SymptomsPage() {
   const navigate = useNavigate();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [symptomText, setSymptomText] = useState('');
   const [severity, setSeverity] = useState('');
   const [duration, setDuration] = useState('');
+  const [file, setFile] = useState<File | null>(null);
+  const [filePreview, setFilePreview] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const validateAndSetFile = (f: File) => {
+    if (!ACCEPTED_TYPES.includes(f.type)) {
+      setError('Only images (JPG, PNG, GIF, WebP) and videos (MP4, MOV, WebM) are allowed.');
+      return;
+    }
+    if (f.size > MAX_FILE_SIZE) {
+      setError('File must be under 10MB.');
+      return;
+    }
+    setError(null);
+    setFile(f);
+    if (f.type.startsWith('image/')) {
+      setFilePreview(URL.createObjectURL(f));
+    } else {
+      setFilePreview(null); // No preview for videos
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (f) validateAndSetFile(f);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    const f = e.dataTransfer.files?.[0];
+    if (f) validateAndSetFile(f);
+  };
+
+  const removeFile = () => {
+    setFile(null);
+    if (filePreview) URL.revokeObjectURL(filePreview);
+    setFilePreview(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,12 +77,23 @@ export default function SymptomsPage() {
     };
 
     try {
-      const res = await fetch('/api/analyze/json', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      
+      let res: Response;
+
+      if (file) {
+        // Use multipart endpoint with image
+        const formData = new FormData();
+        formData.append('data', new Blob([JSON.stringify(payload)], { type: 'application/json' }));
+        formData.append('image', file);
+        res = await fetch('/api/analyze', { method: 'POST', body: formData });
+      } else {
+        // JSON-only endpoint
+        res = await fetch('/api/analyze/json', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      }
+
       if (!res.ok) {
         throw new Error('Analysis failed.');
       }
@@ -170,23 +225,65 @@ export default function SymptomsPage() {
               </div>
             </section>
 
-            {/* Photo Upload */}
+            {/* Photo/Video Upload */}
             <section className="bg-surface-container-lowest p-8 rounded-xl shadow-sm">
               <label className="block font-headline font-bold text-on-surface mb-2">
-                Upload a photo <span className="text-on-surface-variant font-normal text-sm">(Optional)</span>
+                Upload a photo or video <span className="text-on-surface-variant font-normal text-sm">(Optional)</span>
               </label>
               <p className="text-xs text-on-surface-variant mb-4">
-                If applicable, upload a photo of the affected area. This can help improve the analysis.
+                If applicable, upload a photo or short video of the affected area. This can help improve the analysis.
               </p>
-              <div className="border-2 border-dashed border-outline-variant rounded-2xl p-10 flex flex-col items-center justify-center gap-3 hover:border-primary/50 hover:bg-primary-fixed/10 transition-colors cursor-pointer group">
-                <span className="material-symbols-outlined text-4xl text-outline group-hover:text-primary transition-colors">
-                  add_photo_alternate
-                </span>
-                <p className="text-sm text-on-surface-variant">
-                  Drag & drop or <span className="text-primary font-semibold">browse files</span>
-                </p>
-                <p className="text-xs text-outline">PNG, JPG up to 10MB</p>
-              </div>
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/gif,image/webp,video/mp4,video/quicktime,video/webm"
+                onChange={handleFileChange}
+                className="hidden"
+              />
+
+              {file ? (
+                <div className="border-2 border-primary/30 bg-primary-fixed/10 rounded-2xl p-6 flex items-center gap-4">
+                  {filePreview ? (
+                    <img src={filePreview} alt="Preview" className="w-20 h-20 object-cover rounded-xl" />
+                  ) : (
+                    <div className="w-20 h-20 bg-surface-container rounded-xl flex items-center justify-center">
+                      <span className="material-symbols-outlined text-3xl text-primary">videocam</span>
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-on-surface truncate">{file.name}</p>
+                    <p className="text-xs text-on-surface-variant">{(file.size / 1024 / 1024).toFixed(1)} MB</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={removeFile}
+                    className="p-2 rounded-full hover:bg-error/10 transition-colors"
+                  >
+                    <span className="material-symbols-outlined text-error">close</span>
+                  </button>
+                </div>
+              ) : (
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                  onDragLeave={() => setDragOver(false)}
+                  onDrop={handleDrop}
+                  className={`border-2 border-dashed rounded-2xl p-10 flex flex-col items-center justify-center gap-3 transition-colors cursor-pointer group ${
+                    dragOver
+                      ? 'border-primary bg-primary-fixed/20'
+                      : 'border-outline-variant hover:border-primary/50 hover:bg-primary-fixed/10'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-4xl text-outline group-hover:text-primary transition-colors">
+                    add_photo_alternate
+                  </span>
+                  <p className="text-sm text-on-surface-variant">
+                    Drag & drop or <span className="text-primary font-semibold">browse files</span>
+                  </p>
+                  <p className="text-xs text-outline">JPG, PNG, GIF, WebP, MP4, MOV, WebM — up to 10MB</p>
+                </div>
+              )}
             </section>
           </div>
 

@@ -20,4 +20,5 @@ public class AnalysisResponse {
     private String detailedExplanation;
     private String careTypeSuggested;
     private boolean imageAnalyzed;
+    private String imageNote;
 }

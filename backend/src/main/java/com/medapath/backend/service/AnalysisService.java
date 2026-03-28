@@ -104,6 +104,7 @@ public class AnalysisService {
         // Try Gemini AI first, fall back to keyword triage
         TriageResult triage;
         String rawAiResponse;
+        String imageNote = null;
 
         GeminiService.GeminiAnalysisResult geminiResult = geminiService.analyzeSymptoms(
                 request.getSymptomText(), request.getSeverity(), request.getDuration(), imagePath);
@@ -120,6 +121,7 @@ public class AnalysisService {
                     geminiResult.advice()
             );
             detailedExplanation = geminiResult.detailedExplanation();
+            imageNote = geminiResult.imageNote();
             rawAiResponse = "gemini-" + geminiResult.toString();
         } else {
             log.info("Using fallback keyword triage for session {}", request.getSessionId());
@@ -156,6 +158,7 @@ public class AnalysisService {
                 .detailedExplanation(saved.getDetailedExplanation())
                 .careTypeSuggested(saved.getCareTypeSuggested())
                 .imageAnalyzed(imagePath != null)
+                .imageNote(imageNote)
                 .build();
     }
 
