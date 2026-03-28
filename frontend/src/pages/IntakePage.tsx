@@ -1,5 +1,51 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+
+const INSURANCE_PLANS: Record<string, string[]> = {
+  'Aetna': [
+    'Aetna Choice POS II',
+    'Aetna Open Access HMO',
+    'Aetna PPO',
+    'Aetna Medicare Advantage',
+    'Aetna Student Health',
+  ],
+  'Blue Cross Blue Shield': [
+    'BCBS PPO',
+    'BCBS Blue Choice HMO',
+    'BCBS Federal Employee',
+    'BCBS Blue Preferred POS',
+    'BCBS High Deductible',
+  ],
+  'Cigna': [
+    'Cigna Connect HMO',
+    'Cigna Open Access Plus',
+    'Cigna PPO',
+    'Cigna Medicare Supplement',
+    'Cigna HealthSpring',
+  ],
+  'UnitedHealthcare': [
+    'UHC Choice Plus PPO',
+    'UHC Navigate HMO',
+    'UHC Medicare Advantage',
+    'UHC Student Resources',
+    'UHC Oxford Freedom',
+  ],
+  'Humana': [
+    'Humana Gold Plus HMO',
+    'Humana PPO',
+    'Humana Medicare Advantage',
+    'Humana ChoiceCare Network',
+  ],
+  'Kaiser Permanente': [
+    'Kaiser HMO',
+    'Kaiser Bronze 60',
+    'Kaiser Silver 70',
+    'Kaiser Gold 80',
+    'Kaiser Senior Advantage',
+  ],
+  'Self-pay': [],
+  'Other': [],
+};
 
 export default function IntakePage() {
   const navigate = useNavigate();
@@ -12,12 +58,50 @@ export default function IntakePage() {
     insuranceProvider: '',
     planName: ''
   });
+  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [loading, setLoading] = useState(false);
   const [locationLoading, setLocationLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Auto-request location on page load
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+    setLocationLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude, longitude } = position.coords;
+        setCoords({ lat: latitude, lng: longitude });
+        // Reverse geocode to get ZIP
+        const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string;
+        if (!apiKey) { setLocationLoading(false); return; }
+        try {
+          const res = await fetch(
+            `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&result_type=postal_code&key=${apiKey}`
+          );
+          const data = await res.json();
+          if (data.status === 'OK' && data.results.length > 0) {
+            const postalComponent = data.results[0].address_components.find(
+              (c: { types: string[] }) => c.types.includes('postal_code')
+            );
+            if (postalComponent) {
+              setFormData(prev => ({ ...prev, zipCode: postalComponent.short_name }));
+            }
+          }
+        } catch { /* silent — user can enter manually */ }
+        setLocationLoading(false);
+      },
+      () => { setLocationLoading(false); },
+      { timeout: 10000 }
+    );
+  }, []);
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    setFormData(prev => ({ ...prev, [e.target.id]: e.target.value }));
+    const { id, value } = e.target;
+    setFormData(prev => ({ ...prev, [id]: value }));
+    // Reset plan when provider changes
+    if (id === 'insuranceProvider') {
+      setFormData(prev => ({ ...prev, insuranceProvider: value, planName: '' }));
+    }
   };
 
   const handleUseLocation = () => {
@@ -25,21 +109,18 @@ export default function IntakePage() {
       setError('Geolocation is not supported by your browser.');
       return;
     }
-
     setLocationLoading(true);
     setError(null);
-
     navigator.geolocation.getCurrentPosition(
       async (position) => {
         const { latitude, longitude } = position.coords;
+        setCoords({ lat: latitude, lng: longitude });
         const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string;
-
         try {
           const res = await fetch(
             `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&result_type=postal_code&key=${apiKey}`
           );
           const data = await res.json();
-
           if (data.status === 'OK' && data.results.length > 0) {
             const postalComponent = data.results[0].address_components.find(
               (c: { types: string[] }) => c.types.includes('postal_code')
@@ -47,13 +128,13 @@ export default function IntakePage() {
             if (postalComponent) {
               setFormData(prev => ({ ...prev, zipCode: postalComponent.short_name }));
             } else {
-              setError('Could not determine ZIP code from your location. Please enter it manually.');
+              setError('Could not determine ZIP code from your location.');
             }
           } else {
             setError('Reverse geocoding failed. Please enter your ZIP code manually.');
           }
         } catch {
-          setError('Failed to look up your ZIP code. Please enter it manually.');
+          setError('Failed to look up your ZIP code.');
         } finally {
           setLocationLoading(false);
         }
@@ -71,31 +152,29 @@ export default function IntakePage() {
     setLoading(true);
     setError(null);
 
-    const payload = {
+    const payload: Record<string, unknown> = {
       firstName: formData.firstName,
       lastName: formData.lastName,
       age: parseInt(formData.age, 10),
       zipCode: formData.zipCode,
       insuranceProvider: formData.insuranceProvider,
-      planName: formData.planName
+      planName: formData.planName,
     };
+    // Send lat/lng if we have them so backend doesn't need to geocode
+    if (coords) {
+      payload.latitude = coords.lat;
+      payload.longitude = coords.lng;
+    }
 
     try {
       const res = await fetch('/api/intake', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-
-      if (!res.ok) {
-        throw new Error('Failed to create session. Please check your inputs.');
-      }
-
+      if (!res.ok) throw new Error('Failed to create session. Please check your inputs.');
       const data = await res.json();
       sessionStorage.setItem('sessionId', data.sessionId);
-      
       navigate('/symptoms');
     } catch (err: any) {
       setError(err.message || 'An error occurred.');
@@ -103,6 +182,8 @@ export default function IntakePage() {
       setLoading(false);
     }
   };
+
+  const availablePlans = INSURANCE_PLANS[formData.insuranceProvider] ?? [];
 
   return (
     <main className="flex-grow w-full max-w-4xl mx-auto px-6 py-12">
@@ -115,7 +196,6 @@ export default function IntakePage() {
           </div>
           <div className="text-primary font-bold text-lg">25%</div>
         </div>
-        {/* Segmented Progress Bar */}
         <div className="w-full h-2 bg-surface-container-highest rounded-full overflow-hidden flex gap-1">
           <div className="h-full w-1/4 bg-gradient-to-r from-primary to-primary-container rounded-full" />
           <div className="h-full w-1/4 bg-surface-container rounded-full" />
@@ -135,7 +215,7 @@ export default function IntakePage() {
           {/* Section: Identity */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             <div>
-              <label className="block text-sm font-semibold text-on-surface-variant mb-2" htmlFor="first_name">
+              <label className="block text-sm font-semibold text-on-surface-variant mb-2" htmlFor="firstName">
                 First Name
               </label>
               <input
@@ -150,7 +230,7 @@ export default function IntakePage() {
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-on-surface-variant mb-2" htmlFor="last_name">
+              <label className="block text-sm font-semibold text-on-surface-variant mb-2" htmlFor="lastName">
                 Last Name
               </label>
               <input
@@ -180,7 +260,7 @@ export default function IntakePage() {
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-on-surface-variant mb-2" htmlFor="zip_code">
+              <label className="block text-sm font-semibold text-on-surface-variant mb-2" htmlFor="zipCode">
                 ZIP Code
               </label>
               <div className="relative group">
@@ -207,6 +287,12 @@ export default function IntakePage() {
                   {locationLoading ? 'Locating…' : 'Use Location'}
                 </button>
               </div>
+              {coords && (
+                <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
+                  <span className="material-symbols-outlined text-xs">check_circle</span>
+                  Location detected
+                </p>
+              )}
             </div>
           </div>
 
@@ -219,7 +305,7 @@ export default function IntakePage() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               <div>
-                <label className="block text-sm font-semibold text-on-surface-variant mb-2" htmlFor="insurance_provider">
+                <label className="block text-sm font-semibold text-on-surface-variant mb-2" htmlFor="insuranceProvider">
                   Insurance Provider
                 </label>
                 <div className="relative">
@@ -227,14 +313,13 @@ export default function IntakePage() {
                     id="insuranceProvider"
                     value={formData.insuranceProvider}
                     onChange={handleChange}
+                    required
                     className="appearance-none w-full bg-surface-container-low border-none rounded-xl px-4 py-4 text-on-surface focus:ring-0 focus:bg-surface-container-lowest focus:border-b-2 focus:border-primary transition-all duration-200"
                   >
                     <option disabled value="">Select Provider</option>
-                    <option value="aetna">Aetna</option>
-                    <option value="bluecross">Blue Cross Blue Shield</option>
-                    <option value="cigna">Cigna</option>
-                    <option value="united">UnitedHealthcare</option>
-                    <option value="other">Other Provider</option>
+                    {Object.keys(INSURANCE_PLANS).map(p => (
+                      <option key={p} value={p}>{p}</option>
+                    ))}
                   </select>
                   <div className="pointer-events-none absolute inset-y-0 right-4 flex items-center">
                     <span className="material-symbols-outlined text-on-surface-variant">expand_more</span>
@@ -243,17 +328,37 @@ export default function IntakePage() {
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-on-surface-variant mb-2" htmlFor="plan_name">
+                <label className="block text-sm font-semibold text-on-surface-variant mb-2" htmlFor="planName">
                   Plan Name / Type
                 </label>
-                <input
-                  id="planName"
-                  value={formData.planName}
-                  onChange={handleChange}
-                  type="text"
-                  placeholder="e.g. Choice POS II"
-                  className="w-full bg-surface-container-low border-none rounded-xl px-4 py-4 text-on-surface focus:ring-0 focus:bg-surface-container-lowest focus:border-b-2 focus:border-primary transition-all duration-200 placeholder:text-outline"
-                />
+                {availablePlans.length > 0 ? (
+                  <div className="relative">
+                    <select
+                      id="planName"
+                      value={formData.planName}
+                      onChange={handleChange}
+                      className="appearance-none w-full bg-surface-container-low border-none rounded-xl px-4 py-4 text-on-surface focus:ring-0 focus:bg-surface-container-lowest focus:border-b-2 focus:border-primary transition-all duration-200"
+                    >
+                      <option value="">Select Plan (optional)</option>
+                      {availablePlans.map(plan => (
+                        <option key={plan} value={plan}>{plan}</option>
+                      ))}
+                      <option value="other">Other / Not Listed</option>
+                    </select>
+                    <div className="pointer-events-none absolute inset-y-0 right-4 flex items-center">
+                      <span className="material-symbols-outlined text-on-surface-variant">expand_more</span>
+                    </div>
+                  </div>
+                ) : (
+                  <input
+                    id="planName"
+                    value={formData.planName}
+                    onChange={handleChange}
+                    type="text"
+                    placeholder="e.g. Choice POS II"
+                    className="w-full bg-surface-container-low border-none rounded-xl px-4 py-4 text-on-surface focus:ring-0 focus:bg-surface-container-lowest focus:border-b-2 focus:border-primary transition-all duration-200 placeholder:text-outline"
+                  />
+                )}
               </div>
             </div>
           </div>

@@ -23,5 +23,6 @@ public class HospitalDto {
     private String phone;
     private String website;
     private String matchReason;
+    private String coverageNote;
     private int matchScore;
 }

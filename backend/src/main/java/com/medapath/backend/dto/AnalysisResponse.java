@@ -17,6 +17,7 @@ public class AnalysisResponse {
     private List<String> possibleConditions;
     private String urgencyLevel;
     private String advice;
+    private String detailedExplanation;
     private String careTypeSuggested;
     private boolean imageAnalyzed;
 }

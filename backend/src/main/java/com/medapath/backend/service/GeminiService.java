@@ -35,6 +35,22 @@ public class GeminiService {
         return apiKey != null && !apiKey.isBlank();
     }
 
+    public String callGemini(Map<String, Object> requestBody) {
+        if (!isAvailable()) return null;
+        try {
+            return restClient.post()
+                    .uri("/models/{model}:generateContent", model)
+                    .header("Content-Type", "application/json")
+                    .header("x-goog-api-key", apiKey)
+                    .body(requestBody)
+                    .retrieve()
+                    .body(String.class);
+        } catch (Exception e) {
+            log.warn("Gemini API call failed: {}", e.getMessage());
+            return null;
+        }
+    }
+
     public GeminiAnalysisResult analyzeSymptoms(String symptomText, String severity, String duration, String imagePath) {
         if (!isAvailable()) {
             return null;
@@ -61,8 +77,9 @@ public class GeminiService {
 
     private String buildPrompt(String symptomText, String severity, String duration) {
         return """
-                You are a medical triage assistant for a healthcare app called MediPath. \
-                Analyze the following patient symptoms and provide a structured assessment. \
+                You are a friendly medical triage assistant for a healthcare app called MedaPath. \
+                Analyze the patient's symptoms and explain what might be going on in plain, \
+                easy-to-understand language — as if you're explaining to a concerned friend, not a doctor. \
                 This is NOT a diagnosis — it is informational triage guidance only.
 
                 Patient reports:
@@ -72,20 +89,21 @@ public class GeminiService {
 
                 Respond ONLY with valid JSON in this exact format, no markdown or explanation:
                 {
-                  "primaryCondition": "Most likely concern (e.g., 'Possible upper respiratory infection')",
+                  "primaryCondition": "Short name of the likely concern (e.g., 'Upper Respiratory Infection')",
                   "possibleConditions": ["Condition 1", "Condition 2", "Condition 3"],
                   "urgencyLevel": "low|medium|high|emergency",
-                  "advice": "Brief actionable medical guidance (2-3 sentences)",
+                  "advice": "2-3 sentences of clear, actionable guidance in plain English. Tell them what to do NOW and when to see a doctor. Include a gentle reminder this isn't a real diagnosis.",
+                  "detailedExplanation": "A 3-5 sentence explanation of what's likely happening in their body, why they feel the way they do, and what the symptoms typically mean. Use everyday language, no medical jargon. For example: 'Your body is fighting off a bug...' rather than 'Viral pathogen detected...'",
                   "careTypeSuggested": "primary_care|urgent_care|emergency|specialty",
-                  "imageNote": "If an image was provided, note what you observed. Otherwise null"
+                  "imageNote": "If an image was provided, describe what you see in plain language. Otherwise null"
                 }
 
                 Rules:
                 - urgencyLevel must be one of: low, medium, high, emergency
                 - careTypeSuggested must be one of: primary_care, urgent_care, emergency, specialty
                 - Be conservative — when in doubt, suggest higher urgency
-                - Always include a disclaimer tone in advice (e.g., "consult a healthcare provider")
-                - possibleConditions should have exactly 3 entries
+                - Write advice and detailedExplanation as if talking to someone with NO medical background
+                - possibleConditions should have exactly 3 entries with simple names people would recognize
                 """.formatted(symptomText, severity, duration);
     }
 
@@ -163,6 +181,7 @@ public class GeminiService {
                 conditions,
                 textOrDefault(result, "urgencyLevel", "low"),
                 textOrDefault(result, "advice", "Please consult a healthcare provider."),
+                textOrDefault(result, "detailedExplanation", "Based on your symptoms, we recommend consulting with a healthcare provider for a thorough evaluation."),
                 textOrDefault(result, "careTypeSuggested", "primary_care"),
                 result.path("imageNote").stringValue()
         );
@@ -177,6 +196,7 @@ public class GeminiService {
             List<String> possibleConditions,
             String urgencyLevel,
             String advice,
+            String detailedExplanation,
             String careTypeSuggested,
             String imageNote
     ) {}

@@ -178,25 +178,17 @@ export default function AnalysisPage() {
       {/* ─── Secondary Information ─── */}
       <section className="mt-12 grid grid-cols-1 md:grid-cols-2 gap-8">
         <div className="p-8 bg-surface-container-high/50 rounded-3xl">
-          <h4 className="font-bold text-lg mb-4">Symptoms Analysis</h4>
-          <ul className="space-y-4">
-            <li className="flex items-start gap-3">
-              <span className="material-symbols-outlined text-tertiary-container text-sm mt-1">check_circle</span>
-              <div>
-                <p className="text-sm font-bold">Primary Indicators</p>
-                <p className="text-xs text-on-surface-variant">Persistent dry cough, mild febrile state (37.8°C).</p>
-              </div>
-            </li>
-            <li className="flex items-start gap-3">
-              <span className="material-symbols-outlined text-tertiary-container text-sm mt-1">check_circle</span>
-              <div>
-                <p className="text-sm font-bold">Negative Screenings</p>
-                <p className="text-xs text-on-surface-variant">
-                  No chest pain reported, blood oxygen saturation at 98%.
-                </p>
-              </div>
-            </li>
-          </ul>
+          <h4 className="font-bold text-lg mb-4">What's Going On</h4>
+          {data.detailedExplanation ? (
+            <p className="text-sm text-on-surface-variant leading-relaxed">
+              {data.detailedExplanation}
+            </p>
+          ) : (
+            <p className="text-sm text-on-surface-variant leading-relaxed">
+              Based on the symptoms you described, our system has identified potential areas of concern.
+              Please consult with a healthcare provider for a thorough evaluation.
+            </p>
+          )}
         </div>
 
         <div className="relative rounded-3xl overflow-hidden min-h-[200px] flex items-end p-8 group">
@@ -209,7 +201,7 @@ export default function AnalysisPage() {
           <div className="relative z-10 text-white">
             <h4 className="font-bold text-xl mb-2">Nearby Facilities</h4>
             <p className="text-sm text-slate-200 mb-4">
-              3 Clinical Partners found within 5 miles of your location.
+              We'll find the best hospitals matched to your condition and insurance.
             </p>
             <button
               onClick={() => navigate('/results')}

@@ -108,6 +108,8 @@ public class AnalysisService {
         GeminiService.GeminiAnalysisResult geminiResult = geminiService.analyzeSymptoms(
                 request.getSymptomText(), request.getSeverity(), request.getDuration(), imagePath);
 
+        String detailedExplanation;
+
         if (geminiResult != null) {
             log.info("Using Gemini AI analysis for session {}", request.getSessionId());
             triage = new TriageResult(
@@ -117,11 +119,14 @@ public class AnalysisService {
                     geminiResult.careTypeSuggested(),
                     geminiResult.advice()
             );
+            detailedExplanation = geminiResult.detailedExplanation();
             rawAiResponse = "gemini-" + geminiResult.toString();
         } else {
             log.info("Using fallback keyword triage for session {}", request.getSessionId());
             triage = triageFromKeywords(request.getSymptomText());
             triage = adjustForSeverity(triage, request.getSeverity());
+            detailedExplanation = "Based on the symptoms you described, our system has identified a possible concern. " +
+                    "We recommend seeing a healthcare provider who can give you a proper examination and confirm what's going on.";
             rawAiResponse = "fallback-triage-engine";
         }
 
@@ -134,6 +139,7 @@ public class AnalysisService {
                 .primaryCondition(triage.primaryCondition)
                 .urgencyLevel(triage.urgencyLevel)
                 .advice(triage.advice)
+                .detailedExplanation(detailedExplanation)
                 .careTypeSuggested(triage.careType)
                 .rawAiResponse(rawAiResponse)
                 .build();
@@ -147,6 +153,7 @@ public class AnalysisService {
                 .possibleConditions(triage.possibleConditions)
                 .urgencyLevel(saved.getUrgencyLevel())
                 .advice(saved.getAdvice())
+                .detailedExplanation(saved.getDetailedExplanation())
                 .careTypeSuggested(saved.getCareTypeSuggested())
                 .imageAnalyzed(imagePath != null)
                 .build();
@@ -167,6 +174,7 @@ public class AnalysisService {
                 .possibleConditions(triage.possibleConditions)
                 .urgencyLevel(assessment.getUrgencyLevel())
                 .advice(assessment.getAdvice())
+                .detailedExplanation(assessment.getDetailedExplanation())
                 .careTypeSuggested(assessment.getCareTypeSuggested())
                 .imageAnalyzed(assessment.getImagePath() != null)
                 .build();

@@ -10,7 +10,9 @@
       "Bash(./mvnw dependency:get -Dartifact=tools.jackson.core:jackson-databind:3.1.0 -q)",
       "Read(//c/Users/rapha/.m2/repository/tools/jackson/core/jackson-databind/**)",
       "Bash(jar tf:*)",
-      "Bash(javap -classpath ~/.m2/repository/tools/jackson/core/jackson-databind/3.1.0/jackson-databind-3.1.0.jar:~/.m2/repository/tools/jackson/core/jackson-core/3.1.0/jackson-core-3.1.0.jar tools.jackson.databind.JsonNode)"
+      "Bash(javap -classpath ~/.m2/repository/tools/jackson/core/jackson-databind/3.1.0/jackson-databind-3.1.0.jar:~/.m2/repository/tools/jackson/core/jackson-core/3.1.0/jackson-core-3.1.0.jar tools.jackson.databind.JsonNode)",
+      "Bash(npm install:*)",
+      "Bash(mvn clean:*)"
     ]
   }
 }

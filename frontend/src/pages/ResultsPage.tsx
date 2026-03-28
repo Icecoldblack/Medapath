@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -19,6 +18,7 @@ interface Hospital {
   phone: string;
   website: string;
   matchReason: string;
+  coverageNote: string | null;
   matchScore: number;
 }
 
@@ -39,7 +39,6 @@ interface HospitalMapProps {
   onSelectHospital: (id: number) => void;
 }
 
-// SVG pin icon factory
 function makePinSvg(label: string, bg: string, border: string): string {
   return `data:image/svg+xml;utf-8,${encodeURIComponent(`
     <svg xmlns="http://www.w3.org/2000/svg" width="36" height="48" viewBox="0 0 36 48">
@@ -61,9 +60,6 @@ function makeUserPinSvg(): string {
   `)}`;
 }
 
-// Track whether setOptions has been called (only needs to happen once globally)
-let mapsConfigured = false;
-
 function HospitalMap({ hospitals, userLat, userLng, selectedId, onSelectHospital }: HospitalMapProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<google.maps.Map | null>(null);
@@ -72,27 +68,17 @@ function HospitalMap({ hospitals, userLat, userLng, selectedId, onSelectHospital
   const [mapLoaded, setMapLoaded] = useState(false);
 
   useEffect(() => {
-    const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string;
-    if (!apiKey || apiKey === 'YOUR_GOOGLE_MAPS_API_KEY_HERE') {
-      setMapError('Google Maps API key is not configured.');
+    if (!mapRef.current) return;
+    // Check if Google Maps script is loaded
+    if (typeof google === 'undefined' || !google.maps) {
+      setMapError('Google Maps is still loading. Please switch to Map View again in a moment.');
       return;
-    }
-
-    // Configure the loader once
-    if (!mapsConfigured) {
-      setOptions({ apiKey, version: 'weekly' });
-      mapsConfigured = true;
     }
 
     let cancelled = false;
 
-    // Use the new functional importLibrary API
-    importLibrary('maps').then((mapsLib) => {
-      if (cancelled || !mapRef.current) return;
-
-      const { Map } = mapsLib as google.maps.MapsLibrary;
-
-      const map = new Map(mapRef.current, {
+    try {
+      const map = new google.maps.Map(mapRef.current, {
         center: { lat: userLat, lng: userLng },
         zoom: 12,
         disableDefaultUI: false,
@@ -142,10 +128,16 @@ function HospitalMap({ hospitals, userLat, userLng, selectedId, onSelectHospital
         return marker;
       });
 
+      // Fit bounds to show all markers
+      const bounds = new google.maps.LatLngBounds();
+      bounds.extend({ lat: userLat, lng: userLng });
+      hospitals.forEach(h => bounds.extend({ lat: h.latitude, lng: h.longitude }));
+      map.fitBounds(bounds, 50);
+
       if (!cancelled) setMapLoaded(true);
-    }).catch((err: Error) => {
-      if (!cancelled) setMapError(`Failed to load Google Maps: ${err.message}`);
-    });
+    } catch (err) {
+      if (!cancelled) setMapError(`Failed to load map: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
 
     return () => {
       cancelled = true;
@@ -153,7 +145,7 @@ function HospitalMap({ hospitals, userLat, userLng, selectedId, onSelectHospital
       markersRef.current = [];
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userLat, userLng]);
+  }, [userLat, userLng, hospitals]);
 
   // Pan to selected hospital
   useEffect(() => {
@@ -201,6 +193,35 @@ export default function ResultsPage() {
   const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [selectedHospital, setSelectedHospital] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<'list' | 'map'>('list');
+  const [mapsReady, setMapsReady] = useState(false);
+
+  // Load Google Maps script
+  useEffect(() => {
+    if (typeof google !== 'undefined' && google.maps) {
+      setMapsReady(true);
+      return;
+    }
+    const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string;
+    if (!apiKey) return;
+
+    // Check if script already loading
+    if (document.querySelector('script[src*="maps.googleapis.com"]')) {
+      const check = setInterval(() => {
+        if (typeof google !== 'undefined' && google.maps) {
+          setMapsReady(true);
+          clearInterval(check);
+        }
+      }, 200);
+      return () => clearInterval(check);
+    }
+
+    const script = document.createElement('script');
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=marker`;
+    script.async = true;
+    script.defer = true;
+    script.onload = () => setMapsReady(true);
+    document.head.appendChild(script);
+  }, []);
 
   // Fetch matched hospitals
   useEffect(() => {
@@ -218,7 +239,6 @@ export default function ResultsPage() {
         const responseData: MatchResponse = await res.json();
         setData(responseData);
 
-        // Auto-select the top hospital
         if (responseData.hospitals?.length > 0) {
           setSelectedHospital(responseData.hospitals[0].id);
         }
@@ -232,13 +252,12 @@ export default function ResultsPage() {
     fetchHospitals();
   }, []);
 
-  // Try to get geolocation; backend already geocoded ZIP as fallback
+  // Try to get geolocation
   useEffect(() => {
     if (!navigator.geolocation) return;
     navigator.geolocation.getCurrentPosition(
       (pos) => setUserCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
       () => {
-        // Browser denied — fall back to first hospital's coords as rough center
         if (data?.hospitals?.length) {
           setUserCoords({ lat: data.hospitals[0].latitude, lng: data.hospitals[0].longitude });
         }
@@ -246,7 +265,7 @@ export default function ResultsPage() {
     );
   }, [data]);
 
-  // Fallback: once data loads, if no coords yet, center on first hospital
+  // Fallback: center on first hospital
   useEffect(() => {
     if (!userCoords && data?.hospitals?.length) {
       setUserCoords({ lat: data.hospitals[0].latitude, lng: data.hospitals[0].longitude });
@@ -291,6 +310,11 @@ export default function ResultsPage() {
     if (u.includes('low') || u.includes('mild') || u.includes('non')) return 'text-green-600';
     return 'text-amber-600';
   })();
+
+  const formatDistance = (h: Hospital) => {
+    if (h.distanceMiles < 0) return 'Distance unavailable';
+    return h.distance;
+  };
 
   return (
     <main className="max-w-6xl mx-auto px-6 pt-12 pb-24">
@@ -352,7 +376,6 @@ export default function ResultsPage() {
       {/* ─── Tab Switcher ──────────────────────────────────────── */}
       <div className="flex gap-2 mb-6">
         <button
-          id="tab-list"
           onClick={() => setActiveTab('list')}
           className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm transition-all ${
             activeTab === 'list'
@@ -364,7 +387,6 @@ export default function ResultsPage() {
           List View
         </button>
         <button
-          id="tab-map"
           onClick={() => setActiveTab('map')}
           className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm transition-all ${
             activeTab === 'map'
@@ -380,9 +402,8 @@ export default function ResultsPage() {
       {/* ─── Map View ──────────────────────────────────────────── */}
       {activeTab === 'map' && (
         <div className="mb-10 flex flex-col lg:flex-row gap-6">
-          {/* Map */}
           <div className="flex-1 h-[480px] rounded-3xl overflow-hidden shadow-lg border border-outline-variant/10">
-            {userCoords ? (
+            {userCoords && mapsReady ? (
               <HospitalMap
                 hospitals={data.hospitals}
                 userLat={userCoords.lat}
@@ -394,7 +415,7 @@ export default function ResultsPage() {
               <div className="w-full h-full flex items-center justify-center bg-surface-container-low rounded-3xl">
                 <div className="flex flex-col items-center gap-3">
                   <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-                  <p className="text-on-surface-variant text-sm">Acquiring location…</p>
+                  <p className="text-on-surface-variant text-sm">{mapsReady ? 'Acquiring location…' : 'Loading Google Maps…'}</p>
                 </div>
               </div>
             )}
@@ -437,12 +458,22 @@ export default function ResultsPage() {
                   )}
                   <div className="flex items-center gap-2">
                     <span className="material-symbols-outlined text-sm">near_me</span>
-                    <span>{selectedHospitalData.distance}</span>
+                    <span>{formatDistance(selectedHospitalData)}</span>
                   </div>
                 </div>
 
+                {selectedHospitalData.coverageNote && (
+                  <div className="mt-4 p-3 bg-blue-50 rounded-xl">
+                    <p className="text-xs font-bold text-blue-800 mb-1 flex items-center gap-1">
+                      <span className="material-symbols-outlined text-xs">verified_user</span>
+                      Coverage Insight
+                    </p>
+                    <p className="text-xs text-blue-700 leading-relaxed">{selectedHospitalData.coverageNote}</p>
+                  </div>
+                )}
+
                 {selectedHospitalData.matchReason && (
-                  <p className="mt-4 text-xs text-on-surface-variant bg-surface-container px-3 py-2 rounded-xl leading-relaxed">
+                  <p className="mt-3 text-xs text-on-surface-variant bg-surface-container px-3 py-2 rounded-xl leading-relaxed">
                     {selectedHospitalData.matchReason}
                   </p>
                 )}
@@ -479,7 +510,6 @@ export default function ResultsPage() {
           {data.hospitals.length > 0 ? data.hospitals.map((hospital, idx) => (
             <div
               key={hospital.id ?? idx}
-              id={`hospital-card-${hospital.id}`}
               onClick={() => {
                 setSelectedHospital(hospital.id);
                 setActiveTab('map');
@@ -491,7 +521,6 @@ export default function ResultsPage() {
               }`}
             >
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-5">
-                {/* Rank badge + info */}
                 <div className="flex items-start gap-4 flex-1">
                   <span className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm font-extrabold flex-shrink-0 ${
                     idx === 0 ? 'bg-primary text-white' : 'bg-surface-container text-on-surface-variant'
@@ -513,7 +542,7 @@ export default function ResultsPage() {
                       )}
                       {idx === 0 && (
                         <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-primary-fixed text-on-primary-fixed-variant text-xs font-bold">
-                          ⭐ Best Match
+                          Best Match
                         </span>
                       )}
                     </div>
@@ -521,7 +550,7 @@ export default function ResultsPage() {
                     <div className="flex flex-wrap items-center gap-4 text-sm text-on-surface-variant">
                       <span className="flex items-center gap-1">
                         <span className="material-symbols-outlined text-sm">location_on</span>
-                        {hospital.address} · {hospital.distance}
+                        {hospital.address} · {formatDistance(hospital)}
                       </span>
                       <span className="flex items-center gap-1">
                         <span className="material-symbols-outlined text-sm">local_hospital</span>
@@ -541,13 +570,18 @@ export default function ResultsPage() {
                       )}
                     </div>
 
+                    {hospital.coverageNote && (
+                      <p className="mt-2 text-xs text-blue-700 bg-blue-50 px-3 py-1.5 rounded-lg inline-block">
+                        <span className="font-bold">Coverage:</span> {hospital.coverageNote}
+                      </p>
+                    )}
+
                     {hospital.matchReason && (
-                      <p className="mt-2 text-xs text-on-surface-variant/70">{hospital.matchReason}</p>
+                      <p className="mt-1 text-xs text-on-surface-variant/70">{hospital.matchReason}</p>
                     )}
                   </div>
                 </div>
 
-                {/* Actions */}
                 <div className="flex items-center gap-2 flex-shrink-0" onClick={e => e.stopPropagation()}>
                   <button
                     onClick={() => { setSelectedHospital(hospital.id); setActiveTab('map'); }}

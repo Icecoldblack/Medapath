@@ -39,6 +39,9 @@ public class SymptomAssessment {
     @Column(length = 2000)
     private String advice;
 
+    @Column(length = 3000)
+    private String detailedExplanation;
+
     private String careTypeSuggested;
 
     @Column(length = 5000)
