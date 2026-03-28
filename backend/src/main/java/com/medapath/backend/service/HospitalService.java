@@ -105,6 +105,8 @@ public class HospitalService {
                 .id(hospital.getId())
                 .name(hospital.getName())
                 .address(hospital.getAddress())
+                .latitude(hospital.getLatitude())
+                .longitude(hospital.getLongitude())
                 .type(hospital.getType())
                 .inNetwork(inNetwork)
                 .distance(distanceStr)

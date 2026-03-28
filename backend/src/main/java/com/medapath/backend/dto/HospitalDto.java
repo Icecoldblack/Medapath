@@ -12,6 +12,8 @@ public class HospitalDto {
     private Long id;
     private String name;
     private String address;
+    private Double latitude;
+    private Double longitude;
     private String type;
     private boolean inNetwork;
     private String distance;

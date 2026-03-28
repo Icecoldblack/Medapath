@@ -6,16 +6,19 @@ import com.medapath.backend.model.SymptomAssessment;
 import com.medapath.backend.repository.PatientSessionRepository;
 import com.medapath.backend.repository.SymptomAssessmentRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class AnalysisService {
 
     private final SymptomAssessmentRepository assessmentRepository;
     private final PatientSessionRepository sessionRepository;
+    private final GeminiService geminiService;
 
     private static final Map<String, TriageResult> KEYWORD_TRIAGE = new LinkedHashMap<>();
 
@@ -98,8 +101,29 @@ public class AnalysisService {
         sessionRepository.findById(request.getSessionId())
                 .orElseThrow(() -> new RuntimeException("Session not found: " + request.getSessionId()));
 
-        TriageResult triage = triageFromKeywords(request.getSymptomText());
-        triage = adjustForSeverity(triage, request.getSeverity());
+        // Try Gemini AI first, fall back to keyword triage
+        TriageResult triage;
+        String rawAiResponse;
+
+        GeminiService.GeminiAnalysisResult geminiResult = geminiService.analyzeSymptoms(
+                request.getSymptomText(), request.getSeverity(), request.getDuration(), imagePath);
+
+        if (geminiResult != null) {
+            log.info("Using Gemini AI analysis for session {}", request.getSessionId());
+            triage = new TriageResult(
+                    geminiResult.primaryCondition(),
+                    geminiResult.possibleConditions(),
+                    geminiResult.urgencyLevel(),
+                    geminiResult.careTypeSuggested(),
+                    geminiResult.advice()
+            );
+            rawAiResponse = "gemini-" + geminiResult.toString();
+        } else {
+            log.info("Using fallback keyword triage for session {}", request.getSessionId());
+            triage = triageFromKeywords(request.getSymptomText());
+            triage = adjustForSeverity(triage, request.getSeverity());
+            rawAiResponse = "fallback-triage-engine";
+        }
 
         SymptomAssessment assessment = SymptomAssessment.builder()
                 .sessionId(request.getSessionId())
@@ -111,7 +135,7 @@ public class AnalysisService {
                 .urgencyLevel(triage.urgencyLevel)
                 .advice(triage.advice)
                 .careTypeSuggested(triage.careType)
-                .rawAiResponse("fallback-triage-engine")
+                .rawAiResponse(rawAiResponse)
                 .build();
 
         SymptomAssessment saved = assessmentRepository.save(assessment);
