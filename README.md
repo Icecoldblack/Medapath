@@ -1,8 +1,8 @@
 # MedaPath
 
+🏆2nd place Cox Track Hacklanta Winner 
 
-🏆2nd place Cox Track Hacklanta Winner Project 
-**AI-Powered Healthcare Navigation**
+Project: **AI-Powered Healthcare Navigation**
 
 MedaPath is an intelligent healthcare triage and navigation platform that helps patients understand their symptoms, find the right care, and make informed decisions — all powered by Google's Gemini AI.
 
